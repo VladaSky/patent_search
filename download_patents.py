@@ -1,5 +1,6 @@
 import argparse
 import os
+from datetime import datetime
 from typing import Optional
 
 import pandas as pd
@@ -7,12 +8,41 @@ from google.auth.exceptions import DefaultCredentialsError
 from google.cloud import bigquery
 
 
-def build_query(limit: int, country_code: Optional[str] = None, cpc_class: Optional[str] = None) -> str:
+DOMAIN_FILTERS = {
+    "medical-devices": "EXISTS(SELECT 1 FROM UNNEST(cpc) AS c WHERE c.code LIKE 'A61%' OR c.code LIKE 'A61B%' OR c.code LIKE 'A61C%' OR c.code LIKE 'A61F%' OR c.code LIKE 'A61H%' OR c.code LIKE 'A61K%' OR c.code LIKE 'A61L%' OR c.code LIKE 'A61M%' OR c.code LIKE 'A61N%' OR c.code LIKE 'A61P%' OR c.code LIKE 'A61Q%' OR c.code LIKE 'A61R%')",
+    "consumer-electronics": "EXISTS(SELECT 1 FROM UNNEST(cpc) AS c WHERE c.code LIKE 'H04R%' OR c.code LIKE 'H04L%' OR c.code LIKE 'H04W%' OR c.code LIKE 'H04M%' OR c.code LIKE 'H04N%' OR c.code LIKE 'G06F%' OR c.code LIKE 'G10L%' OR c.code LIKE 'H05B%')",
+}
+
+def validate_date(date_text: str) -> str:
+    try:
+        datetime.strptime(date_text, "%Y%m%d")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Date must be in YYYYMMDD format") from exc
+    return date_text
+
+
+def build_query(
+    limit: int,
+    country_code: Optional[str] = None,
+    cpc_class: Optional[str] = None,
+    domain: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> str:
     where_clauses = []
     if country_code:
         where_clauses.append(f"country_code = '{country_code}'")
     if cpc_class:
-        where_clauses.append(f"REGEXP_CONTAINS(TO_JSON_STRING(cpc), r'{cpc_class}')")
+        where_clauses.append(f"EXISTS(SELECT 1 FROM UNNEST(cpc) AS c WHERE c.code LIKE '{cpc_class}%')")
+    if domain:
+        filter_expr = DOMAIN_FILTERS.get(domain)
+        if not filter_expr:
+            raise ValueError(f"Unknown domain: {domain}. Supported values: {', '.join(DOMAIN_FILTERS.keys())}")
+        where_clauses.append(filter_expr)
+    if start_date:
+        where_clauses.append(f"publication_date >= {int(start_date)}")
+    if end_date:
+        where_clauses.append(f"publication_date <= {int(end_date)}")
 
     where_sql = "\nAND ".join(where_clauses)
     if where_sql:
@@ -62,6 +92,24 @@ def main() -> None:
     parser.add_argument("--country-code", default=None, help="Optional country code filter, e.g. US")
     parser.add_argument("--cpc-class", default=None, help="Optional CPC class prefix filter, e.g. G06")
     parser.add_argument(
+        "--domain",
+        default=None,
+        choices=list(DOMAIN_FILTERS.keys()),
+        help="Optional preset domain filter. Supported values: medical-devices, consumer-electronics.",
+    )
+    parser.add_argument(
+        "--start-date",
+        default=None,
+        type=validate_date,
+        help="Optional start publication date filter in YYYYMMDD format.",
+    )
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        type=validate_date,
+        help="Optional end publication date filter in YYYYMMDD format.",
+    )
+    parser.add_argument(
         "--credentials-file",
         default=None,
         help="Optional path to a Google service-account JSON key. If omitted, Application Default Credentials are used.",
@@ -84,7 +132,7 @@ def main() -> None:
             "3) passing --credentials-file /path/to/service-account.json"
         ) from exc
 
-    query = build_query(args.limit, args.country_code, args.cpc_class)
+    query = build_query(args.limit, args.country_code, args.cpc_class, args.domain, args.start_date, args.end_date)
 
     print(f"Running query for up to {args.limit} patents...")
     df = client.query(query).to_dataframe()

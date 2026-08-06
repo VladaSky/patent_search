@@ -39,6 +39,32 @@ The long-term goal is to help determine whether an invention is likely already c
    python download_patents.py --project-id YOUR_PROJECT_ID --limit 50000 --output patents_50k.csv
    ```
 
+### Field-specific downloads
+
+To pull a more focused sample, use the `--domain` option.
+
+Medical devices:
+
+```bash
+python download_patents.py --project-id YOUR_PROJECT_ID --domain medical-devices --limit 50000 --output patents_medical_devices.csv
+```
+
+Consumer electronics:
+
+```bash
+python download_patents.py --project-id YOUR_PROJECT_ID --domain consumer-electronics --limit 50000 --output patents_consumer_electronics.csv
+```
+
+### Narrow by publication date to reduce query cost
+
+If your project hits BigQuery free-query limits, adding a date range can reduce scanned bytes significantly:
+
+```bash
+python download_patents.py --project-id YOUR_PROJECT_ID --domain medical-devices --start-date 20240101 --end-date 20240630 --limit 50000 --output patents_medical_devices_recent.csv
+```
+
+If you need older patents, widen the date range gradually.
+
 ## Notes
 
 The downloader uses Google BigQuery access to the public patent dataset. Authentication is required through Google Cloud credentials.
