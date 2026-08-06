@@ -34,6 +34,26 @@ def build_query(limit: int, country_code: Optional[str] = None, cpc_class: Optio
     """
 
 
+def build_search_text(row: pd.Series) -> str:
+    title = str(row.get("title", "")).strip()
+    abstract = str(row.get("abstract", "")).strip()
+    claims = str(row.get("claims", "")).strip()
+
+    parts = [title, abstract]
+    if claims:
+        claims_preview = " ".join(claims.split())[:1800]
+        parts.append(claims_preview)
+
+    return " ".join(part for part in parts if part)
+
+
+def prepare_output_df(df: pd.DataFrame) -> pd.DataFrame:
+    output_df = df[["publication_number", "title", "abstract", "publication_date", "country_code", "cpc"]].copy()
+    output_df["search_text"] = df.apply(build_search_text, axis=1)
+    output_df["claims_preview"] = df["claims"].apply(lambda value: " ".join(str(value).split())[:1200] if value else "")
+    return output_df
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Download a sample of patents from Google Patents Public Data")
     parser.add_argument("--project-id", required=True, help="Google Cloud project ID for BigQuery")
@@ -70,10 +90,11 @@ def main() -> None:
     df = client.query(query).to_dataframe()
 
     df = df.fillna("")
-    df.to_csv(args.output, index=False)
+    output_df = prepare_output_df(df)
+    output_df.to_csv(args.output, index=False)
 
-    print(f"Saved {len(df)} patents to {os.path.abspath(args.output)}")
-    print("Columns:", ", ".join(df.columns))
+    print(f"Saved {len(output_df)} patents to {os.path.abspath(args.output)}")
+    print("Columns:", ", ".join(output_df.columns))
 
 
 if __name__ == "__main__":
